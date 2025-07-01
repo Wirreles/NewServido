@@ -35,7 +35,7 @@ import Image from "next/image"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 import { useState, useEffect, type FormEvent, type ChangeEvent, type DragEvent } from "react"
-import { db, storage } from "@/lib/firebase"
+import { db, storage, auth } from "@/lib/firebase"
 import {
   collection,
   addDoc,
@@ -719,11 +719,33 @@ export default function SellerDashboardPage() {
 
   // 3. Función para suscribirse
   const handleSubscribe = async () => {
-    if (!currentUser) return;
+    console.log("[handleSubscribe] Click en Suscribirse");
+    if (!currentUser) {
+      console.error("[handleSubscribe] No hay usuario autenticado (contexto)");
+      toast({ title: 'Error', description: 'No hay usuario autenticado', variant: 'destructive' });
+      return;
+    }
     setSubscribing(true);
     try {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_BASE_URL;
-      const token = await currentUser.getIdToken();
+      if (!backendUrl) {
+        console.error("[handleSubscribe] No se encontró la URL del backend en las variables de entorno");
+        toast({ title: 'Error', description: 'No se encontró la URL del backend', variant: 'destructive' });
+        return;
+      }
+      const user = auth.currentUser;
+      if (!user || typeof user.getIdToken !== 'function') {
+        console.error("[handleSubscribe] No hay usuario de Firebase Auth o getIdToken no está disponible");
+        toast({ title: 'Error', description: 'No hay usuario de Firebase Auth o getIdToken no está disponible', variant: 'destructive' });
+        return;
+      }
+      const token = await user.getIdToken();
+      if (!token) {
+        console.error("[handleSubscribe] No se pudo obtener el token de autenticación");
+        toast({ title: 'Error', description: 'No se pudo obtener el token de autenticación', variant: 'destructive' });
+        return;
+      }
+      console.log("[handleSubscribe] Token obtenido:", token);
       const res = await fetch(`${backendUrl}/api/mercadopago/subscription/create`, {
         method: 'POST',
         headers: {
@@ -735,12 +757,17 @@ export default function SellerDashboardPage() {
           planType: 'BASICO',
         }),
       });
+      console.log("[handleSubscribe] Respuesta HTTP status:", res.status);
       const data = await res.json();
+      console.log("[handleSubscribe] Respuesta de la API:", data);
       if (data.init_point) {
         window.location.href = data.init_point;
+      } else {
+        toast({ title: 'Error', description: data.error || 'No se recibió un punto de inicio de suscripción', variant: 'destructive' });
       }
     } catch (err) {
-      toast({ title: 'Error', description: 'No se pudo iniciar la suscripción', variant: 'destructive' });
+      console.error("[handleSubscribe] Error en la suscripción:", err);
+      toast({ title: 'Error', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
     } finally {
       setSubscribing(false);
     }
