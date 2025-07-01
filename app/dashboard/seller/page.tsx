@@ -1005,10 +1005,37 @@ export default function SellerDashboardPage() {
           {activeTab !== "addService" && (
             <Card className="p-6 mb-8">
               <h2 className="text-2xl font-semibold mb-4">Cuenta de MercadoPago</h2>
-              <p className="mb-2 text-sm text-gray-600">
-                Conecta tu cuenta de Mercado Pago para recibir pagos. Serás redirigido a Mercado Pago para autorizar y luego volverás aquí.
-              </p>
-              <ConnectMercadoPagoButton />
+              {connectionStatus?.isConnected ? (
+                <div className="flex flex-col gap-2">
+                  <div className="bg-green-100 text-green-800 p-3 rounded flex items-center gap-2">
+                    <span className="font-semibold">✅ Cuenta conectada correctamente.</span>
+                    <span className="text-xs">Ya puedes recibir pagos y vender productos.</span>
+                  </div>
+                  <Button
+                    variant="destructive"
+                    disabled={isDisconnecting}
+                    onClick={() => {
+                      if (window.confirm('¿Seguro que quieres desconectar tu cuenta de MercadoPago? No podrás vender productos hasta volver a conectar tu cuenta.')) {
+                        handleDisconnect();
+                      }
+                    }}
+                    className="w-full mt-2"
+                  >
+                    {isDisconnecting ? 'Desconectando...' : 'Desconectar cuenta de MercadoPago'}
+                  </Button>
+                  <div className="text-xs text-orange-700 mt-1">
+                    <AlertTriangle className="inline w-4 h-4 mr-1 align-text-bottom" />
+                    Si desconectas tu cuenta, no podrás vender productos ni recibir pagos hasta volver a conectar.
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <div className="bg-yellow-100 text-yellow-800 p-3 rounded flex items-center gap-2">
+                    <span className="font-semibold">⚠️ Debes conectar tu cuenta de MercadoPago para vender productos y recibir pagos.</span>
+                  </div>
+                  <ConnectMercadoPagoButton />
+                </div>
+              )}
             </Card>
           )}
 
