@@ -169,15 +169,12 @@ export default function SellerDashboardPage() {
 
   useEffect(() => {
     const checkConnectionStatus = async () => {
-      if (!currentUser) return
-
+      if (!currentUser) return;
       try {
         const response = await ApiService.getConnectionStatus(currentUser.uid)
-
         if (response.error) {
           throw new Error(response.error)
         }
-
         if (response.data) {
           setConnectionStatus({
             isConnected: response.data.isConnected,
@@ -195,9 +192,10 @@ export default function SellerDashboardPage() {
         setIsLoading(false)
       }
     }
-
-    checkConnectionStatus()
-  }, [currentUser, toast])
+    if (!authLoading && currentUser) {
+      checkConnectionStatus()
+    }
+  }, [currentUser, authLoading, toast])
 
   // 2. Refrescar el perfil del usuario al entrar a la pestaña de añadir servicio
   useEffect(() => {
@@ -1454,9 +1452,9 @@ export default function SellerDashboardPage() {
                       </AlertDescription>
                     </Alert>
                     <Button
-                      className="bg-purple-700 text-white px-4 py-2 rounded"
                       onClick={handleSubscribe}
-                      disabled={subscribing}
+                      disabled={!currentUser || authLoading || subscribing}
+                      className="bg-purple-700 text-white px-4 py-2 rounded"
                     >
                       {subscribing ? 'Redirigiendo...' : 'Suscribirse con MercadoPago'}
                     </Button>
