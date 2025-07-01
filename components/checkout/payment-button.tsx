@@ -2,57 +2,40 @@
 
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Loader2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
-import { useAuth } from "@/contexts/auth-context"
 import type { PaymentItem } from "@/types/payment"
+import { ApiService } from "@/lib/services/api"
 
 interface PaymentButtonProps {
   items: PaymentItem[]
-  onSuccess?: () => void
-  onError?: (error: Error) => void
+  sellerId: string
+  className?: string
 }
 
-export function PaymentButton({ items, onSuccess, onError }: PaymentButtonProps) {
+export function PaymentButton({ items, sellerId, className = "" }: PaymentButtonProps) {
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
-  const { user } = useAuth()
 
   const handlePayment = async () => {
-    if (!user) {
-      toast({
-        title: "Error",
-        description: "Debes iniciar sesión para realizar el pago",
-        variant: "destructive"
-      })
-      return
-    }
-
     try {
       setLoading(true)
 
-      const response = await fetch("/api/mercadopago/create-preference", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          items,
-          buyerId: user.uid
-        })
+      const response = await ApiService.createPayment({
+        productId: items[0].id,
+        quantity: items[0].quantity,
+        vendedorId: sellerId
       })
 
-      if (!response.ok) {
-        throw new Error("Error al crear la preferencia de pago")
+      if (response.error) {
+        throw new Error(response.error)
       }
 
-      const preferences = await response.json()
+      if (!response.data?.init_point) {
+        throw new Error("No se recibió el punto de inicio del pago")
+      }
 
-      // Si hay múltiples vendedores, abrir cada link en una nueva pestaña
-      preferences.forEach((pref: { init_point: string }) => {
-        window.open(pref.init_point, "_blank")
-      })
-
-      onSuccess?.()
+      window.location.href = response.data.init_point
     } catch (error) {
       console.error("Error al procesar el pago:", error)
       toast({
@@ -60,7 +43,6 @@ export function PaymentButton({ items, onSuccess, onError }: PaymentButtonProps)
         description: error instanceof Error ? error.message : "Error al procesar el pago",
         variant: "destructive"
       })
-      onError?.(error as Error)
     } finally {
       setLoading(false)
     }
@@ -69,10 +51,17 @@ export function PaymentButton({ items, onSuccess, onError }: PaymentButtonProps)
   return (
     <Button
       onClick={handlePayment}
-      disabled={loading || !items.length}
-      className="w-full"
+      className={className}
+      disabled={loading}
     >
-      {loading ? "Procesando..." : "Pagar ahora"}
+      {loading ? (
+        <>
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          Procesando...
+        </>
+      ) : (
+        "Pagar"
+      )}
     </Button>
   )
 } 

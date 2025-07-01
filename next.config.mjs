@@ -9,6 +9,15 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  async rewrites() {
+    return [
+      {
+        source: '/api/mercadopago/:path*',
+        destination: 'http://localhost:3005/api/mercadopago/:path*',
+        basePath: false
+      }
+    ]
+  }
 }
 
 export default nextConfig

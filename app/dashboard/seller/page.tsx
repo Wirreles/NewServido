@@ -32,6 +32,7 @@ import { Menu } from "lucide-react"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Badge } from "@/components/ui/badge"
 import Image from "next/image"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 import { useState, useEffect, type FormEvent, type ChangeEvent, type DragEvent } from "react"
 import { db, storage } from "@/lib/firebase"
@@ -56,6 +57,8 @@ import { useAuth } from "@/contexts/auth-context"
 import { ChatList } from "@/components/chat-list"
 import { hasWhiteBackground, isValidVideoFile, getVideoDuration } from "@/lib/image-validation"
 import { ConnectMercadoPagoButton } from "@/components/ui/connect-mercadopago-button"
+import { useToast } from "@/components/ui/use-toast"
+import { ApiService } from "@/lib/services/api"
 
 interface UserProfile {
   uid: string
@@ -100,15 +103,15 @@ interface Brand {
   name: string
 }
 
-interface MercadoPagoStatus {
+interface ConnectionStatus {
   isConnected: boolean
-  nickname?: string
-  email?: string
+  lastChecked: string
 }
 
 export default function SellerDashboardPage() {
   const { currentUser, authLoading, handleLogout, refreshUserProfile } = useAuth()
   const router = useRouter()
+  const { toast } = useToast()
 
   const [activeTab, setActiveTab] = useState("dashboard")
   const [myProducts, setMyProducts] = useState<Product[]>([])
@@ -148,9 +151,15 @@ export default function SellerDashboardPage() {
   const [profileImagePreviewUrl, setProfileImagePreviewUrl] = useState<string | null>(null)
   const [uploadingProfileImage, setUploadingProfileImage] = useState(false)
 
-  const [mpStatus, setMpStatus] = useState<MercadoPagoStatus>({
-    isConnected: false
-  })
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus | null>(null)
+  const [isDisconnecting, setIsDisconnecting] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+
+  // 1. Añadir estado para la pestaña activa de añadir: producto o servicio
+  const [activeAddTab, setActiveAddTab] = useState<'product' | 'service'>('product')
+
+  // 1. Añadir estado para controlar el loading de suscripción
+  const [subscribing, setSubscribing] = useState(false)
 
   useEffect(() => {
     if (currentUser) {
@@ -159,24 +168,44 @@ export default function SellerDashboardPage() {
   }, [currentUser])
 
   useEffect(() => {
-    // Verificar el estado de conexión con MercadoPago
-    const checkMPConnection = async () => {
-      const userDoc = await getDoc(doc(db, "users", currentUser?.uid))
-      const userData = userDoc.data()
+    const checkConnectionStatus = async () => {
+      if (!currentUser) return
 
-      if (userData?.mercadopago?.access_token) {
-        setMpStatus({
-          isConnected: true,
-          nickname: userData.mercadopago.nickname,
-          email: userData.mercadopago.email
+      try {
+        const response = await ApiService.getConnectionStatus(currentUser.uid)
+
+        if (response.error) {
+          throw new Error(response.error)
+        }
+
+        if (response.data) {
+          setConnectionStatus({
+            isConnected: response.data.isConnected,
+            lastChecked: new Date().toISOString()
+          })
+        }
+      } catch (error) {
+        console.error("Error al verificar el estado de conexión:", error)
+        toast({
+          title: "Error",
+          description: "No se pudo verificar el estado de conexión con MercadoPago",
+          variant: "destructive"
         })
+      } finally {
+        setIsLoading(false)
       }
     }
 
-    if (currentUser?.uid) {
-      checkMPConnection()
+    checkConnectionStatus()
+  }, [currentUser, toast])
+
+  // 2. Refrescar el perfil del usuario al entrar a la pestaña de añadir servicio
+  useEffect(() => {
+    if (activeTab === 'addService' && refreshUserProfile) {
+      refreshUserProfile();
     }
-  }, [currentUser])
+    // eslint-disable-next-line
+  }, [activeTab]);
 
   const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -215,12 +244,8 @@ export default function SellerDashboardPage() {
       router.push(currentUser?.role === "admin" ? "/admin" : "/?error=not_seller")
       return
     }
-    if (!authLoading && currentUser?.role === "seller" && !currentUser.isSubscribed) {
-      router.push("/dashboard/seller/subscribe")
-      return
-    }
 
-    if (currentUser && currentUser.isSubscribed) {
+    if (currentUser) {
       fetchSellerData(currentUser.uid)
       fetchCategoriesAndBrands()
     }
@@ -487,13 +512,6 @@ export default function SellerDashboardPage() {
       return
     }
 
-    if (!isEditing && (currentUser.productUploadLimit === undefined || currentUser.productUploadLimit <= 0)) {
-      setError(
-        "Has alcanzado tu límite de 20 productos por mes. Por favor, espera al próximo ciclo de facturación o contacta a soporte.",
-      )
-      return
-    }
-
     if (mediaFiles.length === 0 && currentProductMedia.length === 0) {
       setError("Debes subir al menos una imagen o video del producto.")
       return
@@ -551,11 +569,6 @@ export default function SellerDashboardPage() {
           ...prevProducts,
         ])
         setSuccessMessage("Producto añadido exitosamente.")
-
-        const userRef = doc(db, "users", currentUser.uid)
-        await updateDoc(userRef, {
-          productUploadLimit: increment(-1),
-        })
       }
       resetForm()
       setActiveTab("products")
@@ -675,7 +688,62 @@ export default function SellerDashboardPage() {
     }
   }
 
-  if (authLoading || (!currentUser && !authLoading) || (currentUser?.role === "seller" && !currentUser.isSubscribed)) {
+  const handleDisconnect = async () => {
+    if (!currentUser) return
+
+    try {
+      setIsDisconnecting(true)
+      const response = await ApiService.disconnectAccount(currentUser.uid)
+
+      if (response.error) {
+        throw new Error(response.error)
+      }
+
+      setConnectionStatus({
+        isConnected: false,
+        lastChecked: new Date().toISOString()
+      })
+      toast({
+        title: "Éxito",
+        description: "Tu cuenta de MercadoPago ha sido desconectada exitosamente"
+      })
+    } catch (error) {
+      console.error("Error al desconectar la cuenta:", error)
+      toast({
+        title: "Error",
+        description: "No se pudo desconectar la cuenta de MercadoPago",
+        variant: "destructive"
+      })
+    } finally {
+      setIsDisconnecting(false)
+    }
+  }
+
+  // 3. Función para suscribirse
+  const handleSubscribe = async () => {
+    if (!currentUser) return;
+    setSubscribing(true);
+    try {
+      const res = await fetch('/api/mercadopago/subscription/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: currentUser.uid,
+          planType: 'BASICO', // O el plan que corresponda
+        }),
+      });
+      const data = await res.json();
+      if (data.init_point) {
+        window.location.href = data.init_point;
+      }
+    } catch (err) {
+      toast({ title: 'Error', description: 'No se pudo iniciar la suscripción', variant: 'destructive' });
+    } finally {
+      setSubscribing(false);
+    }
+  };
+
+  if (authLoading || (!currentUser && !authLoading)) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-100">
         <Loader2 className="h-12 w-12 animate-spin text-orange-600" />
@@ -688,7 +756,13 @@ export default function SellerDashboardPage() {
     0,
   )
 
-  const canAddMoreProducts = currentUser?.productUploadLimit !== undefined && currentUser.productUploadLimit > 0
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col lg:grid lg:grid-cols-[280px_1fr] min-h-screen w-full bg-gray-100">
@@ -729,10 +803,21 @@ export default function SellerDashboardPage() {
                   resetForm()
                   setActiveTab("addProduct")
                 }}
-                disabled={!canAddMoreProducts && !isEditing}
               >
                 <PlusCircle className="h-4 w-4" />
                 {isEditing ? "Editar Producto" : "Añadir Producto"}
+              </Button>
+              <Button
+                variant={activeTab === "addService" ? "secondary" : "ghost"}
+                className="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-700 hover:text-orange-600 justify-start"
+                onClick={() => {
+                  resetForm()
+                  setActiveTab("addService")
+                  setActiveAddTab("service")
+                }}
+              >
+                <PlusCircle className="h-4 w-4" />
+                Añadir Servicio
               </Button>
               <Button
                 variant={activeTab === "chats" ? "secondary" : "ghost"}
@@ -814,11 +899,22 @@ export default function SellerDashboardPage() {
                     resetForm()
                     setActiveTab("addProduct")
                   }}
-                  disabled={!canAddMoreProducts && !isEditing}
                   className="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-700 hover:text-orange-600 justify-start"
                 >
                   <PlusCircle className="mr-2 h-5 w-5" />
                   {isEditing ? "Editar" : "Añadir"} Producto
+                </Button>
+                <Button
+                  variant={activeTab === "addService" ? "secondary" : "ghost"}
+                  onClick={() => {
+                    resetForm()
+                    setActiveTab("addService")
+                    setActiveAddTab("service")
+                  }}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2 text-gray-700 hover:text-orange-600 justify-start"
+                >
+                  <PlusCircle className="mr-2 h-5 w-5" />
+                  Añadir Servicio
                 </Button>
                 <Button
                   variant={activeTab === "chats" ? "secondary" : "ghost"}
@@ -876,24 +972,15 @@ export default function SellerDashboardPage() {
           )}
 
           {/* Sección de MercadoPago */}
-          <Card className="p-6 mb-8">
-            <h2 className="text-2xl font-semibold mb-4">Cuenta de MercadoPago</h2>
-            
-            {mpStatus.isConnected ? (
-              <div>
-                <p className="text-green-600 font-medium mb-2">✅ Cuenta conectada</p>
-                <p>Usuario: {mpStatus.nickname}</p>
-                <p>Email: {mpStatus.email}</p>
-              </div>
-            ) : (
-              <div>
-                <p className="text-gray-600 mb-4">
-                  Conecta tu cuenta de MercadoPago para recibir pagos directamente en tu billetera.
-                </p>
-                <ConnectMercadoPagoButton />
-              </div>
-            )}
-          </Card>
+          {activeTab !== "addService" && (
+            <Card className="p-6 mb-8">
+              <h2 className="text-2xl font-semibold mb-4">Cuenta de MercadoPago</h2>
+              <p className="mb-2 text-sm text-gray-600">
+                Conecta tu cuenta de Mercado Pago para recibir pagos. Serás redirigido a Mercado Pago para autorizar y luego volverás aquí.
+              </p>
+              <ConnectMercadoPagoButton />
+            </Card>
+          )}
 
           {/* Dashboard Tab - keeping existing code */}
           {activeTab === "dashboard" && (
@@ -922,16 +1009,6 @@ export default function SellerDashboardPage() {
                     <p className="text-xs text-muted-foreground">Estimación basada en stock y precio actual.</p>
                   </CardContent>
                 </Card>
-                <Card>
-                  <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-                    <CardTitle className="text-sm font-medium">Productos Restantes (Mes)</CardTitle>
-                    <PlusCircle className="w-4 h-4 text-muted-foreground" />
-                  </CardHeader>
-                  <CardContent>
-                    <div className="text-2xl font-bold">{currentUser?.productUploadLimit ?? 0}</div>
-                    <p className="text-xs text-muted-foreground">Límite de 20 productos por ciclo.</p>
-                  </CardContent>
-                </Card>
               </CardContent>
             </Card>
           )}
@@ -956,13 +1033,9 @@ export default function SellerDashboardPage() {
                         resetForm()
                         setActiveTab("addProduct")
                       }}
-                      disabled={!canAddMoreProducts}
                     >
                       <PlusCircle className="mr-2 h-4 w-4" /> Publicar mi primer producto
                     </Button>
-                    {!canAddMoreProducts && (
-                      <p className="text-sm text-red-600 mt-2">Has alcanzado tu límite de productos para este mes.</p>
-                    )}
                   </div>
                 ) : (
                   <div className="overflow-x-auto -mx-4 sm:mx-0">
@@ -1054,7 +1127,7 @@ export default function SellerDashboardPage() {
           {activeTab === "addProduct" && (
             <Card>
               <CardHeader>
-                <CardTitle>{isEditing ? "Editar" : "Añadir Nuevo"} Producto/Servicio</CardTitle>
+                <CardTitle>{isEditing ? "Editar" : "Añadir Nuevo"} Producto</CardTitle>
                 <CardDescription>
                   Completa los detalles para {isEditing ? "actualizar" : "agregar"} un ítem.
                 </CardDescription>
@@ -1326,7 +1399,7 @@ export default function SellerDashboardPage() {
                       </Select>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2 pt-2">
+                  {/* <div className="flex items-center space-x-2 pt-2">
                     <Checkbox
                       id="productIsService"
                       checked={productIsService}
@@ -1335,9 +1408,9 @@ export default function SellerDashboardPage() {
                     <Label htmlFor="productIsService" className="text-base">
                       ¿Es un servicio? (No requiere stock)
                     </Label>
-                  </div>
+                  </div> */}
                   <div className="flex gap-2 pt-4">
-                    <Button type="submit" disabled={submittingProduct || (!canAddMoreProducts && !isEditing)}>
+                    <Button type="submit" disabled={submittingProduct || (!isEditing)}>
                       {submittingProduct ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1353,10 +1426,267 @@ export default function SellerDashboardPage() {
                       Cancelar
                     </Button>
                   </div>
-                  {!canAddMoreProducts && !isEditing && (
-                    <p className="text-sm text-red-600 mt-2">
-                      No puedes añadir más productos. Has alcanzado tu límite mensual.
-                    </p>
+                </form>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Add/Edit Service Tab - Updated with new media upload */}
+          {activeTab === "addService" && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Añadir Nuevo Servicio</CardTitle>
+                <CardDescription>Completa los detalles para agregar un servicio.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {currentUser && currentUser.role === 'seller' && currentUser.isSubscribed === false && (
+                  <div className="mb-6">
+                    <Alert className="bg-yellow-50 border-yellow-200 mb-4">
+                      <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                      <AlertTitle className="text-yellow-800">Suscripción requerida</AlertTitle>
+                      <AlertDescription className="text-yellow-700">
+                        Debes suscribirte para poder crear y publicar servicios en la plataforma.
+                      </AlertDescription>
+                    </Alert>
+                    <Button
+                      className="bg-purple-700 text-white px-4 py-2 rounded"
+                      onClick={handleSubscribe}
+                      disabled={subscribing}
+                    >
+                      {subscribing ? 'Redirigiendo...' : 'Suscribirse con MercadoPago'}
+                    </Button>
+                  </div>
+                )}
+                <form
+                  onSubmit={async (e) => {
+                    if (currentUser && currentUser.isSubscribed === false) {
+                      e.preventDefault();
+                      return;
+                    }
+                    // ... lógica original del submit ...
+                  }}
+                  className="space-y-6 relative"
+                >
+                  <fieldset disabled={currentUser && currentUser.isSubscribed === false} style={{ opacity: currentUser && currentUser.isSubscribed === false ? 0.5 : 1 }}>
+                    <div>
+                      <Label htmlFor="serviceMedia" className="text-base">
+                        Imágenes y Videos del Servicio
+                      </Label>
+                      <div className="mt-2 space-y-4">
+                        <Alert className="bg-blue-50 border-blue-200">
+                          <AlertTriangle className="h-4 w-4 text-blue-600" />
+                          <AlertTitle className="text-blue-800">Requisitos importantes:</AlertTitle>
+                          <AlertDescription className="text-blue-700">
+                            <ul className="list-disc list-inside space-y-1 mt-2">
+                              <li><strong>Imágenes:</strong> Deben tener fondo blanco obligatoriamente</li>
+                              <li><strong>Videos:</strong> Máximo 60 segundos y 50MB de tamaño</li>
+                              <li>Formatos soportados: JPG, PNG, WebP para imágenes | MP4, WebM para videos</li>
+                            </ul>
+                          </AlertDescription>
+                        </Alert>
+                        {mediaValidationErrors.length > 0 && (
+                          <Alert variant="destructive">
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertTitle>Errores de validación:</AlertTitle>
+                            <AlertDescription>
+                              <ul className="list-disc list-inside space-y-1 mt-2">
+                                {mediaValidationErrors.map((error, index) => (
+                                  <li key={index}>{error}</li>
+                                ))}
+                              </ul>
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                        <div
+                          className={`flex flex-col items-center gap-4 p-6 border-2 border-dashed rounded-lg transition-colors
+                            ${isDraggingOver ? "border-orange-500 bg-orange-50" : "border-gray-300 hover:border-orange-400"}
+                            ${validatingImages ? "opacity-50" : ""}`}
+                          onDragEnter={handleDragEnter}
+                          onDragLeave={handleDragLeave}
+                          onDragOver={handleDragOver}
+                          onDrop={handleDrop}
+                        >
+                          <div className="text-center">
+                            <div className="flex justify-center gap-4 mb-4">
+                              <ImageIconLucide className="h-12 w-12 text-gray-400" />
+                              <Video className="h-12 w-12 text-gray-400" />
+                            </div>
+                            <p className="text-lg font-medium text-gray-700 mb-2">
+                              {isDraggingOver ? "¡Suelta los archivos aquí!" : "Arrastra imágenes y videos aquí"}
+                            </p>
+                            <p className="text-sm text-gray-500 mb-4">o haz clic para seleccionar archivos</p>
+                          </div>
+                          <Input
+                            id="serviceMedia"
+                            type="file"
+                            accept="image/*,video/*"
+                            multiple
+                            onChange={handleMediaChange}
+                            className="block w-full max-w-xs text-sm text-slate-500
+                              file:mr-4 file:py-2 file:px-4
+                              file:rounded-md file:border-0
+                              file:text-sm file:font-semibold
+                              file:bg-orange-100 file:text-orange-700
+                              hover:file:bg-orange-200
+                              cursor-pointer"
+                            disabled={validatingImages}
+                          />
+                          {validatingImages && (
+                            <div className="flex items-center gap-2 text-orange-600">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span className="text-sm">Validando archivos...</span>
+                            </div>
+                          )}
+                        </div>
+                        {currentProductMedia.length > 0 && (
+                          <div>
+                            <Label className="text-sm font-medium text-gray-700 mb-2 block">Media actual:</Label>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                              {currentProductMedia.map((media, index) => (
+                                <div key={index} className="relative group">
+                                  <div className="aspect-square relative bg-gray-100 rounded-lg overflow-hidden">
+                                    {media.type === "image" ? (
+                                      <Image
+                                        src={media.url || "/placeholder.svg"}
+                                        alt={`Media ${index + 1}`}
+                                        layout="fill"
+                                        objectFit="cover"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center bg-gray-200">
+                                        <div className="text-center">
+                                          <Video className="h-8 w-8 text-gray-600 mx-auto mb-2" />
+                                          <span className="text-xs text-gray-600">Video</span>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="icon"
+                                    className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => handleRemoveCurrentMedia(index)}
+                                  >
+                                    <XCircle className="h-4 w-4" />
+                                  </Button>
+                                  <Badge variant="secondary" className="absolute bottom-2 left-2 text-xs">
+                                    {media.type}
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {mediaPreviewUrls.length > 0 && (
+                          <div>
+                            <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                              Nuevos archivos seleccionados:
+                            </Label>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                              {mediaPreviewUrls.map((url, index) => (
+                                <div key={index} className="relative group">
+                                  <div className="aspect-square relative bg-gray-100 rounded-lg overflow-hidden">
+                                    {mediaFiles[index].type.startsWith("image/") ? (
+                                      <Image
+                                        src={url || "/placeholder.svg"}
+                                        alt={`Preview ${index + 1}`}
+                                        layout="fill"
+                                        objectFit="cover"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center bg-gray-200">
+                                        <div className="text-center">
+                                          <Video className="h-8 w-8 text-gray-600 mx-auto mb-2" />
+                                          <span className="text-xs text-gray-600">Video</span>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="icon"
+                                    className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => handleRemoveMedia(index)}
+                                  >
+                                    <XCircle className="h-4 w-4" />
+                                  </Button>
+                                  <Badge variant="secondary" className="absolute bottom-2 left-2 text-xs">
+                                    {mediaFiles[index].type.startsWith("image/") ? "imagen" : "video"}
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {uploadingMedia && (
+                          <div className="flex items-center gap-2 text-orange-600">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            <span className="text-sm">Subiendo archivos...</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <Label htmlFor="serviceName" className="text-base">
+                        Nombre
+                      </Label>
+                      <Input
+                        id="serviceName"
+                        value={productName}
+                        onChange={(e) => setProductName(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor="serviceDescription" className="text-base">
+                        Descripción
+                      </Label>
+                      <Textarea
+                        id="serviceDescription"
+                        value={productDescription}
+                        onChange={(e) => setProductDescription(e.target.value)}
+                        rows={4}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="servicePrice" className="text-base">
+                          Precio ($)
+                        </Label>
+                        <Input
+                          id="servicePrice"
+                          type="number"
+                          step="0.01"
+                          value={productPrice}
+                          onChange={(e) => setProductPrice(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-4">
+                      <Button type="submit" disabled={submittingProduct || (!isEditing)}>
+                        {submittingProduct ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Guardando...
+                          </>
+                        ) : isEditing ? (
+                          "Actualizar Servicio"
+                        ) : (
+                          "Añadir Servicio"
+                        )}
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={resetForm} disabled={submittingProduct}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </fieldset>
+                  {currentUser && currentUser.isSubscribed === false && (
+                    <div className="absolute inset-0 bg-white bg-opacity-70 flex items-center justify-center z-10 pointer-events-none">
+                      <span className="text-lg font-semibold text-gray-700">Debes estar suscripto para crear un servicio.</span>
+                    </div>
                   )}
                 </form>
               </CardContent>
