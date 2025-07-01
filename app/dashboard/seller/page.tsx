@@ -724,7 +724,8 @@ export default function SellerDashboardPage() {
     if (!currentUser) return;
     setSubscribing(true);
     try {
-      const res = await fetch('/api/mercadopago/subscription/create', {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_BASE_URL;
+      const res = await fetch(`${backendUrl}/api/mercadopago/subscription/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
