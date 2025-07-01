@@ -23,8 +23,12 @@ export function ConnectMercadoPagoButton() {
       if (!tokenFirebase) {
         throw new Error("No se pudo obtener el token de autenticación.")
       }
-      // Llama al nuevo endpoint
-      const response = await fetch('/api/mercadopago/oauth-url', {
+      // Llama al endpoint del backend real
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_BASE_URL;
+      if (!backendUrl) {
+        throw new Error("No se encontró la URL del backend en las variables de entorno.");
+      }
+      const response = await fetch(`${backendUrl}/api/mercadopago/oauth-url`, {
         headers: {
           'Authorization': `Bearer ${tokenFirebase}`
         }
