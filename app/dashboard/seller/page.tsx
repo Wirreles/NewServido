@@ -725,12 +725,16 @@ export default function SellerDashboardPage() {
     setSubscribing(true);
     try {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_BASE_URL;
+      const token = await currentUser.getIdToken();
       const res = await fetch(`${backendUrl}/api/mercadopago/subscription/create`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           userId: currentUser.uid,
-          planType: 'BASICO', // O el plan que corresponda
+          planType: 'BASICO',
         }),
       });
       const data = await res.json();
