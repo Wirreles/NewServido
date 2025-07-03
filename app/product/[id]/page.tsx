@@ -292,12 +292,13 @@ export default function ProductDetailPage() {
     addItem({
       id: product.id,
       name: product.name,
+      description: product.description,
       price: product.price,
+      quantity: quantity,
       imageUrl: firstImage?.url || product.imageUrl,
       isService: product.isService,
       sellerId: product.sellerId,
       stock: product.stock,
-      quantity,
     })
 
     setQuantity(1)

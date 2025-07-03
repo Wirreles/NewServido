@@ -1003,8 +1003,8 @@ export default function SellerDashboardPage() {
 
           {/* Sección de MercadoPago */}
           {activeTab !== "addService" && (
-            <Card className="p-6 mb-8">
-              <h2 className="text-2xl font-semibold mb-4">Cuenta de MercadoPago</h2>
+          <Card className="p-6 mb-8">
+            <h2 className="text-2xl font-semibold mb-4">Cuenta de MercadoPago</h2>
               {connectionStatus?.isConnected ? (
                 <div className="flex flex-col gap-2">
                   <div className="bg-green-100 text-green-800 p-3 rounded flex items-center gap-2">
@@ -1027,16 +1027,16 @@ export default function SellerDashboardPage() {
                     <AlertTriangle className="inline w-4 h-4 mr-1 align-text-bottom" />
                     Si desconectas tu cuenta, no podrás vender productos ni recibir pagos hasta volver a conectar.
                   </div>
-                </div>
-              ) : (
+              </div>
+            ) : (
                 <div className="flex flex-col gap-2">
                   <div className="bg-yellow-100 text-yellow-800 p-3 rounded flex items-center gap-2">
                     <span className="font-semibold">⚠️ Debes conectar tu cuenta de MercadoPago para vender productos y recibir pagos.</span>
                   </div>
-                  <ConnectMercadoPagoButton />
-                </div>
-              )}
-            </Card>
+                <ConnectMercadoPagoButton />
+              </div>
+            )}
+          </Card>
           )}
 
           {/* Dashboard Tab - keeping existing code */}
@@ -1190,7 +1190,20 @@ export default function SellerDashboardPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                {connectionStatus?.isConnected !== true && (
+                  <div className="mb-6">
+                    <Alert className="bg-yellow-50 border-yellow-200 mb-4">
+                      <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                      <AlertTitle className="text-yellow-800">Conexión requerida</AlertTitle>
+                      <AlertDescription className="text-yellow-700">
+                        Debes conectar tu cuenta de MercadoPago para poder crear y publicar productos en la plataforma.
+                      </AlertDescription>
+                    </Alert>
+                    <ConnectMercadoPagoButton />
+                  </div>
+                )}
                 <form onSubmit={handleSubmitProduct} className="space-y-6">
+                  <fieldset disabled={!Boolean(connectionStatus?.isConnected)} style={{ opacity: !Boolean(connectionStatus?.isConnected) ? 0.5 : 1 }}>
                   {/* Media Upload Section */}
                   <div>
                     <Label htmlFor="productMedia" className="text-base">
@@ -1456,7 +1469,7 @@ export default function SellerDashboardPage() {
                       </Select>
                     </div>
                   </div>
-                  {/* <div className="flex items-center space-x-2 pt-2">
+                    {/* <div className="flex items-center space-x-2 pt-2">
                     <Checkbox
                       id="productIsService"
                       checked={productIsService}
@@ -1465,9 +1478,9 @@ export default function SellerDashboardPage() {
                     <Label htmlFor="productIsService" className="text-base">
                       ¿Es un servicio? (No requiere stock)
                     </Label>
-                  </div> */}
+                    </div> */}
                   <div className="flex gap-2 pt-4">
-                    <Button type="submit" disabled={submittingProduct || (!isEditing)}>
+                      <Button type="submit" disabled={submittingProduct || (!isEditing)}>
                       {submittingProduct ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -1483,6 +1496,7 @@ export default function SellerDashboardPage() {
                       Cancelar
                     </Button>
                   </div>
+                  </fieldset>
                 </form>
               </CardContent>
             </Card>

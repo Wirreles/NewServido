@@ -75,7 +75,7 @@ export default function SignupPage() {
       await setDoc(doc(db, "users", user.uid), userData)
 
       if (accountType === "seller") {
-        router.push("/dashboard/seller/subscribe") // Redirect sellers to subscription page
+        router.push("/dashboard/seller") // Redirect sellers to subscription page
       } else {
         router.push("/") // Redirect buyers to homepage
       }

@@ -13,14 +13,14 @@ import { useState } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { useToast } from "@/components/ui/use-toast"
 import { ApiService } from "@/lib/services/api"
-import type { PaymentItem } from "@/types/payment"
+import type { CartItem } from "@/types/payment"
 
 interface GroupedItems {
-  [sellerId: string]: PaymentItem[]
+  [sellerId: string]: CartItem[]
 }
 
 export function CartDrawer() {
-  const { items, removeFromCart, clearCart } = useCart()
+  const { items, removeFromCart, clearCart, getItemQuantity } = useCart()
   const { currentUser } = useAuth()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
@@ -29,19 +29,11 @@ export function CartDrawer() {
     if (!acc[item.sellerId]) {
       acc[item.sellerId] = []
     }
-    acc[item.sellerId].push({
-      id: item.id,
-      title: item.title,
-      description: item.description || "",
-      unit_price: item.unit_price,
-      quantity: item.quantity,
-      currency_id: item.currency_id,
-      image: item.imageUrl
-    })
+    acc[item.sellerId].push(item)
     return acc
   }, {})
 
-  const handleCheckout = async (sellerItems: PaymentItem[], sellerId: string) => {
+  const handleCheckout = async (sellerItems: CartItem[], sellerId: string) => {
     if (!currentUser) {
       toast({
         title: "Error",
@@ -54,9 +46,10 @@ export function CartDrawer() {
     try {
       setLoading(true)
 
+      // Crear preferencia de pago para todos los items del vendedor
       const response = await ApiService.createPayment({
-        productId: sellerItems[0].id,
-        quantity: sellerItems[0].quantity,
+        productId: sellerItems.map(item => item.id).join(','),
+        quantity: sellerItems.reduce((total, item) => total + item.quantity, 0),
         vendedorId: sellerId
       })
 
@@ -88,7 +81,7 @@ export function CartDrawer() {
           <ShoppingBag className="h-5 w-5" />
           {items.length > 0 && (
             <span className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-orange-600 text-white text-xs flex items-center justify-center">
-              {items.length}
+              {items.reduce((total, item) => total + item.quantity, 0)}
             </span>
             )}
           </Button>
@@ -100,21 +93,33 @@ export function CartDrawer() {
         <div className="mt-8">
           {Object.entries(groupedItems).map(([sellerId, sellerItems]) => (
             <div key={sellerId} className="mb-8 border-b pb-4">
-              <h3 className="font-semibold mb-4">Vendedor ID: {sellerId}</h3>
+              <h3 className="font-semibold mb-4 text-sm text-gray-600">Vendedor</h3>
               {sellerItems.map((item) => (
                 <div key={item.id} className="flex justify-between items-center mb-4">
-                  <div>
-                    <p className="font-medium">{item.title}</p>
-                    <p className="text-sm text-gray-500">
-                      ${item.unit_price} x {item.quantity}
-                    </p>
+                  <div className="flex items-center gap-3 flex-1">
+                    {item.imageUrl && (
+                      <div className="w-12 h-12 relative rounded-md overflow-hidden">
+                        <Image
+                          src={item.imageUrl}
+                          alt={item.name}
+                          layout="fill"
+                          objectFit="cover"
+                        />
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <p className="font-medium text-sm">{item.name}</p>
+                      <p className="text-sm text-gray-500">
+                        ${item.price} x {item.quantity}
+                      </p>
+                    </div>
                   </div>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => removeFromCart(item.id)}
                   >
-                    Eliminar
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               ))}
@@ -123,20 +128,35 @@ export function CartDrawer() {
                 onClick={() => handleCheckout(sellerItems, sellerId)}
                 disabled={loading}
               >
-                Pagar ${sellerItems.reduce((total, item) => total + item.unit_price * item.quantity, 0).toFixed(2)}
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Procesando...
+                  </>
+                ) : (
+                  `Pagar $${sellerItems.reduce((total, item) => total + (item.price * item.quantity), 0).toFixed(2)}`
+                )}
               </Button>
             </div>
           ))}
           {items.length === 0 ? (
-            <p className="text-center text-gray-500">No hay productos en el carrito</p>
+            <div className="text-center py-8">
+              <ShoppingCart className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+              <p className="text-gray-500 mb-4">No hay productos en el carrito</p>
+              <Button asChild>
+                <Link href="/products">
+                  Explorar productos
+                </Link>
+              </Button>
+            </div>
           ) : (
-                        <Button
-                          variant="outline"
+            <Button
+              variant="outline"
               className="w-full mt-4"
               onClick={clearCart}
             >
               Vaciar Carrito
-                </Button>
+            </Button>
           )}
         </div>
       </SheetContent>

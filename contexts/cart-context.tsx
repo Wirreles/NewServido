@@ -2,10 +2,9 @@
 
 import type React from "react"
 import { createContext, useContext, useReducer, useEffect, ReactNode } from "react"
-import type { PaymentItem } from "@/types/payment"
+import type { CartItem as CartItemType } from "@/types/payment"
 
-interface CartItem extends PaymentItem {
-  sellerId: string
+interface CartItem extends CartItemType {
   imageUrl?: string
 }
 
@@ -25,6 +24,7 @@ interface CartContextType {
   removeFromCart: (id: string) => void
   updateQuantity: (id: string, quantity: number) => void
   clearCart: () => void
+  getItemQuantity: (id: string) => number
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined)
@@ -94,6 +94,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "CLEAR_CART" })
   }
 
+  const getItemQuantity = (id: string) => {
+    const item = state.items.find(item => item.id === id)
+    return item ? item.quantity : 0
+  }
+
   return (
     <CartContext.Provider
       value={{
@@ -101,7 +106,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
         addItem,
         removeFromCart,
         updateQuantity,
-        clearCart
+        clearCart,
+        getItemQuantity
       }}
     >
       {children}
