@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button"
 import { Loader2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { useAuth } from "@/contexts/auth-context"
-import { auth } from "@/lib/firebase"
 
 export function ConnectMercadoPagoButton() {
   const [isLoading, setIsLoading] = useState(false)
@@ -19,20 +18,25 @@ export function ConnectMercadoPagoButton() {
         throw new Error("Debes iniciar sesión para conectar tu cuenta de MercadoPago.")
       }
       // Obtener el token de Firebase del usuario autenticado
-      const tokenFirebase = await auth.currentUser?.getIdToken()
+      const tokenFirebase = await currentUser.getIdToken()
       if (!tokenFirebase) {
         throw new Error("No se pudo obtener el token de autenticación.")
       }
-      // Llama al endpoint del backend real
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_BASE_URL;
+      // Usa la variable de entorno estándar
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
       if (!backendUrl) {
-        throw new Error("No se encontró la URL del backend en las variables de entorno.");
+        throw new Error("No se encontró la URL del backend en las variables de entorno (NEXT_PUBLIC_API_URL).")
       }
+      // Llama al endpoint del backend real
       const response = await fetch(`${backendUrl}/api/mercadopago/oauth-url`, {
         headers: {
           'Authorization': `Bearer ${tokenFirebase}`
         }
       });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Error del backend: ${errorText}`);
+      }
       const data = await response.json();
       if (!data.authUrl) throw new Error("No se recibió la URL de autorización");
       window.location.href = data.authUrl;

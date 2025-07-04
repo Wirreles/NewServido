@@ -168,8 +168,18 @@ export default function SellerDashboardPage() {
   }, [currentUser])
 
   useEffect(() => {
+    if (authLoading) {
+      // Todavía cargando el usuario, no hacer nada
+      return;
+    }
+    if (!currentUser) {
+      // Si no hay usuario, no intentes chequear conexión
+      setConnectionStatus(null);
+      setIsLoading(false);
+      return;
+    }
+  
     const checkConnectionStatus = async () => {
-      if (!currentUser) return;
       try {
         const response = await ApiService.getConnectionStatus(currentUser.uid)
         if (response.error) {
@@ -192,10 +202,9 @@ export default function SellerDashboardPage() {
         setIsLoading(false)
       }
     }
-    if (!authLoading && currentUser) {
-      checkConnectionStatus()
-    }
-  }, [currentUser, authLoading, toast])
+  
+    checkConnectionStatus()
+  }, [authLoading, currentUser, toast])
 
   // 2. Refrescar el perfil del usuario al entrar a la pestaña de añadir servicio
   useEffect(() => {
@@ -727,8 +736,8 @@ export default function SellerDashboardPage() {
     }
     setSubscribing(true);
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_BASE_URL;
-      if (!backendUrl) {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+      if (!backendUrl) { 
         console.error("[handleSubscribe] No se encontró la URL del backend en las variables de entorno");
         toast({ title: 'Error', description: 'No se encontró la URL del backend', variant: 'destructive' });
         return;

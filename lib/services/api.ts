@@ -16,7 +16,7 @@ interface ConnectionStatusResponse {
 }
 
 export class ApiService {
-  private static baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3005/api'
+  private static baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL
 
   private static async fetchApi<T>(endpoint: string, options: RequestInit = {}, authRequired = false): Promise<ApiResponse<T>> {
     try {
@@ -58,18 +58,18 @@ export class ApiService {
 
   // Suscripciones
   static async createSubscription(userId: string, planType: string): Promise<ApiResponse<PaymentPreference>> {
-    return this.fetchApi<PaymentPreference>('/mercadopago/subscription/create', {
+    return this.fetchApi<PaymentPreference>('/api/mercadopago/subscription/create', {
       method: 'POST',
       body: JSON.stringify({ userId, planType }),
     }, true)
   }
 
   static async getSubscription(userId: string): Promise<ApiResponse<Subscription>> {
-    return this.fetchApi<Subscription>(`/mercadopago/subscriptions/${userId}`, {}, true)
+    return this.fetchApi<Subscription>(`/api/mercadopago/subscriptions/${userId}`, {}, true)
   }
 
   static async cancelSubscription(subscriptionId: string): Promise<ApiResponse<void>> {
-    return this.fetchApi(`/mercadopago/subscriptions/${subscriptionId}/cancel`, {
+    return this.fetchApi(`/api/mercadopago/subscriptions/${subscriptionId}/cancel`, {
       method: 'POST',
     }, true)
   }
@@ -80,7 +80,7 @@ export class ApiService {
     quantity: number
     vendedorId: string
   }): Promise<ApiResponse<PaymentPreference>> {
-    return this.fetchApi<PaymentPreference>('/mercadopago/payments/create-preference', {
+    return this.fetchApi<PaymentPreference>('/api/mercadopago/payments/create-preference', {
       method: 'POST',
       body: JSON.stringify(data),
     }, true)
@@ -88,18 +88,18 @@ export class ApiService {
 
   // OAuth y conexión
   static async handleOAuthCallback(code: string, userId: string): Promise<ApiResponse<void>> {
-    return this.fetchApi('/mercadopago/oauth-callback', {
+    return this.fetchApi('/api/mercadopago/oauth-callback', {
       method: 'POST',
       body: JSON.stringify({ code, userId }),
     }, true)
   }
 
   static async getConnectionStatus(userId: string): Promise<ApiResponse<ConnectionStatusResponse>> {
-    return this.fetchApi<ConnectionStatusResponse>(`/mercadopago/connection-status/${userId}`, {}, true)
+    return this.fetchApi<ConnectionStatusResponse>(`/api/mercadopago/connection-status/${userId}`, {}, true)
   }
 
   static async disconnectAccount(userId: string): Promise<ApiResponse<void>> {
-    return this.fetchApi(`/mercadopago/disconnect/${userId}`, {
+    return this.fetchApi(`/api/mercadopago/disconnect/${userId}`, {
       method: 'POST',
     }, true)
   }
